@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "XJTU 课程 PPT 导出器",
+  "version": "0.1.0",
+  "description": "从已登录的 XJTU LMS 课程回放生成 PPT PDF。处理在本机完成。",
+  "permissions": ["activeTab", "tabs", "storage"],
+  "host_permissions": [
+    "https://lms.xjtu.edu.cn/*",
+    "https://rms-v5.xjtu.edu.cn/*",
+    "http://127.0.0.1:8765/*"
+  ],
+  "action": {
+    "default_title": "课程 PPT 导出器",
+    "default_popup": "popup.html"
+  },
+  "background": { "service_worker": "service-worker.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["https://lms.xjtu.edu.cn/*", "https://rms-v5.xjtu.edu.cn/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
