@@ -1,0 +1,7 @@
+body { width: 360px; margin: 0; color: #1f2937; font: 14px system-ui, sans-serif; background: #f8fafc; }
+main { padding: 16px; } h1 { margin: 0 0 8px; font-size: 18px; } p { color: #475569; min-height: 20px; }
+label { display: block; margin: 10px 0; } select, input { box-sizing: border-box; width: 100%; margin-top: 4px; padding: 6px; border: 1px solid #cbd5e1; border-radius: 5px; background: white; }
+.buttons { display: flex; gap: 8px; margin: 10px 0; } button { flex: 1; padding: 8px; border: 1px solid #94a3b8; border-radius: 5px; background: white; cursor: pointer; } button.primary { color: white; border-color: #2563eb; background: #2563eb; }
+.sampling { border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; padding: 4px 0; } .check { display: flex; gap: 8px; align-items: center; } .check input { width: auto; margin: 0; }
+.list { margin: 10px 0; } .list h2 { margin: 6px 0; font-size: 14px; } .list button { display: block; width: 100%; margin: 4px 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+pre { max-height: 150px; overflow: auto; white-space: pre-wrap; color: #334155; }

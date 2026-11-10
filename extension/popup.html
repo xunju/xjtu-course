@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>课程 PPT 导出器</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+  <main>
+    <h1>课程 PPT 导出器</h1>
+    <p id="context">正在扫描当前页面…</p>
+    <div class="buttons"><button id="scan">扫描当前页</button><button id="health">检查本地服务</button></div>
+    <section id="courses" class="list" hidden><h2>课程</h2><div id="courseList"></div></section>
+    <section id="lessons" class="list" hidden><h2>课次</h2><div id="lessonList"></div></section>
+    <label>采样预设<select id="preset"><option value="balanced">平衡（0.3 秒）</option><option value="fast">快速（1 秒）</option><option value="complete">完整（0.1 秒）</option><option value="custom">自定义</option></select></label>
+    <section class="sampling"><label>间隔（秒）<input id="interval" type="number" min="0.03" step="0.01" value="0.3"></label><label>变化阈值<input id="threshold" type="number" min="0" max="1" step="0.001" value="0.03"></label><label>页面/版本视觉阈值<input id="visual" type="number" min="0" max="1" step="0.0001" value="0.999"></label><label>页面/版本 OCR 阈值<input id="text" type="number" min="0" max="1" step="0.01" value="0.98"></label><label>幻灯片视觉阈值<input id="slideVisual" type="number" min="0" max="1" step="0.0001" value="0.999"></label><label>幻灯片 OCR 阈值<input id="slideText" type="number" min="0" max="1" step="0.01" value="0.99"></label></section>
+    <label class="check"><input id="delete" type="checkbox"> 审计成功后删除临时视频</label>
+    <div class="buttons"><button id="start" class="primary">生成当前节 PDF</button><button id="startAll" class="primary">生成整门课程 PDF</button></div>
+    <button id="cancel" hidden>取消当前任务</button>
+    <pre id="result" aria-live="polite"></pre>
+  </main><script src="popup.js"></script>
+</body></html>
