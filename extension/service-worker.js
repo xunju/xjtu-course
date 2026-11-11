@@ -38,11 +38,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const sampling = message.sampling || {};
       const job = await local('/v1/jobs', { method: 'POST', body: JSON.stringify({
         source: 'browser-extension', mode: message.mode || page.kind, page, sampling,
-        allPages: Boolean(message.allPages), deleteVideo: Boolean(message.deleteVideo),
+        allPages: Boolean(message.allPages), deleteVideo: Boolean(message.deleteVideo), ocr: message.ocr !== false,
       }) });
       return { ok: true, data: job };
     }
     if (message?.type === 'GET_JOB') return { ok: true, data: await local(`/v1/jobs/${encodeURIComponent(message.jobId)}`) };
+    if (message?.type === 'LIST_JOBS') return { ok: true, data: await local('/v1/jobs') };
     if (message?.type === 'CANCEL_JOB') {
       if (!message.jobId) throw new Error('没有可取消的任务');
       return { ok: true, data: await local(`/v1/jobs/${encodeURIComponent(message.jobId)}/cancel`, { method: 'POST' }) };
@@ -51,3 +52,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   })().then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message })).catch(() => {});
   return true;
 });
+

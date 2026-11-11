@@ -44,8 +44,9 @@ const python = process.env.PYTHON || 'python';
 const scanArgs = [resolve(ROOT, 'src/course/slide_scan.py'), cfg.input, '--out', scanDir,
   '--interval', String(cfg.interval), '--threshold', String(cfg.threshold)];
 if (cfg.interval <= 1) scanArgs.push('--sequential');
+console.error('[stage] extract-frames');
 await run(python, scanArgs);
-if (cfg.ocr) await run(python, [resolve(ROOT, 'src/course/slide_ocr.py'), resolve(scanDir, 'manifest.json')]);
+if (cfg.ocr) { console.error('[stage] ocr'); await run(python, [resolve(ROOT, 'src/course/slide_ocr.py'), resolve(scanDir, 'manifest.json')]); }
 const manifest = JSON.parse(await readFile(resolve(scanDir, cfg.ocr ? 'manifest-ocr.json' : 'manifest.json'), 'utf8'));
 const candidates = manifest.candidates.map((x) => ({
   ...x,
@@ -59,6 +60,7 @@ const slides = assignChapters(clusterSlideVersions(candidates, {
 }), { initial: cfg.chapter });
 const slidesPath = resolve(cfg.out, 'slides.json');
 await writeFile(slidesPath, JSON.stringify({ source: cfg.input, slides }, null, 2), 'utf8');
+console.error('[stage] export-pdf');
 await run(process.env.PYTHON || 'python', [resolve(ROOT, 'src/course/course_export.py'), slidesPath, '--out', cfg.out]);
 await run(process.env.PYTHON || 'python', [resolve(ROOT, 'src/course/review_report.py'), resolve(cfg.out, 'course.json')]);
 // Keep transcript state beside the slide output. With no ASR endpoint this
@@ -69,3 +71,4 @@ await run(process.execPath, [resolve(ROOT, 'bin/course-transcript.mjs'), cfg.inp
 await run(process.execPath, [resolve(ROOT, 'bin/course-summary.mjs'),
   resolve(cfg.out, 'course.json'), '--transcript', resolve(cfg.out, 'transcript.json')]);
 console.log(JSON.stringify({ source: basename(cfg.input), candidates: candidates.length, slides: slides.length, versions: slides.reduce((n, s) => n + s.versions.length, 0), ocr: cfg.ocr, out: cfg.out }));
+

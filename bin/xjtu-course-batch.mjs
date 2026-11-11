@@ -31,9 +31,11 @@ const limit = Number(value('--limit', 0));
 const page = Number(value('--page', 1));
 const allPages = args.includes('--all-pages') || allCourses || value('--page', '') === 'all';
 const lessonOnly = value('--lesson', null);
+const activityUrl = value('--activity-url', null);
 const force = args.includes('--force');
 const useCurrentPage = args.includes('--current-page');
 const deleteVideo = args.includes('--delete-video');
+const ocr = !args.includes('--no-ocr');
 const dryRun = args.includes('--dry-run');
 const maxRetries = Number(value('--max-retries', 3));
 const statePath = resolve(value('--state', resolve(out, 'batch-state.json')));
@@ -43,9 +45,10 @@ if (!Number.isInteger(maxRetries) || maxRetries < 1) throw new Error('invalid --
 if (!courseId && !allCourses) throw new Error('use --course ID or --all-courses');
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-function run(command, argv) { return new Promise((resolveRun, reject) => {
+function progress(payload) { console.error(`[progress] ${JSON.stringify({ at: new Date().toISOString(), ...payload })}`); }
+function run(command, argv, onLine = null) { return new Promise((resolveRun, reject) => {
   const child = spawn(command, argv, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-  let stderr = ''; child.stderr.on('data', (x) => { stderr += x; });
+  let stderr = ''; child.stderr.on('data', (x) => { stderr += x; for (const line of String(x).split(/\r?\n/).map(s => s.trim()).filter(Boolean)) { console.error(line); if (onLine) onLine(line); } });
   child.on('error', reject); child.on('close', (code) => code === 0 ? resolveRun() : reject(new Error(`${command} exited ${code}: ${stderr.slice(-1200)}`)));
 }); }
 
@@ -73,12 +76,12 @@ async function playEmbeddedVideos(target) {
   try {
     const tree = await c.call('Page.getFrameTree');
     const frames = [];
-    const walk = (node) => { if (/rms-v5\.xjtu\.edu\.cn/i.test(node?.frame?.url ?? '')) frames.push(node.frame.id); for (const child of node?.childFrames ?? []) walk(child); };
+    const walk = (node) => { if (node?.frame?.id && !/^about:blank$/i.test(node.frame.url ?? '')) frames.push(node.frame.id); for (const child of node?.childFrames ?? []) walk(child); };
     walk(tree.frameTree);
     for (const frameId of frames) {
       const world = await c.call('Page.createIsolatedWorld', { frameId, worldName: 'dsh-batch-play', grantUniveralAccess: true });
       await c.call('Runtime.evaluate', { contextId: world.executionContextId, awaitPromise: true, returnByValue: true,
-        expression: "JSON.stringify([...document.querySelectorAll('button[aria-label*=播放],.mvp-toggle-play')].map(b => { b.click(); return b.getAttribute('aria-label'); }))" });
+        expression: "JSON.stringify((function(){ const videos=[...document.querySelectorAll('video')]; const playing=videos.some(v=>!v.paused&&!v.ended&&v.readyState>=2); const buttons=[...document.querySelectorAll('button[aria-label*=播放], [aria-label*=播放], [title*=播放], .mvp-toggle-play, button[class*=play], [class*=play-button]')].filter(b=>{const r=b.getBoundingClientRect(); return r.width>0&&r.height>0;}); if(!playing&&buttons[0]) buttons[0].click(); return {playing,clicked:!playing&&!!buttons[0]}; })())" });
       await c.call('Runtime.evaluate', { contextId: world.executionContextId, awaitPromise: true, returnByValue: true,
         expression: "JSON.stringify([...document.querySelectorAll('video')].map(v => { const p=v.play(); return {src:v.currentSrc||v.src, play:!!p}; }))" });
     }
@@ -86,7 +89,7 @@ async function playEmbeddedVideos(target) {
 }
 async function navigate(target, url) { const c = cdp(target); try { await c.call('Page.navigate', { url }); } finally { c.close(); } }
 
-const linksExpression = `JSON.stringify([...document.querySelectorAll('a[href],a.title,.learning-activity')].map(a => ({href:a.href||'',text:(a.innerText||a.textContent||'').trim(),id:a.id||'',clickIndex:a.classList.contains('title')?[...document.querySelectorAll('a.title')].indexOf(a):null,cls:a.className||''})).filter(x => x.text))`;
+const linksExpression = `JSON.stringify([...document.querySelectorAll('a[href],a.title,.learning-activity,[data-id],[data-activity-id],[data-href]')].map(a => { const id=a.id||a.getAttribute('data-id')||a.getAttribute('data-activity-id')||''; const m=String(id).match(/(?:learning-activity-|activity-)?(\\d{5,})$/i); const href=a.href||a.getAttribute('data-href')||(m ? location.origin+location.pathname.replace(/\\/lesson\\/?$/i,'/learning-activity')+'#/'+m[1] : ''); return {href,text:(a.innerText||a.textContent||'').trim(),id,clickIndex:a.classList.contains('title')?[...document.querySelectorAll('a.title')].indexOf(a):null,cls:a.className||''}; }).filter(x => x.text || x.id))`;
 const lessonSnapshotExpression = `JSON.stringify((function(){
   const text=x=>String(x?.innerText||x?.textContent||'').trim();
   const controls=[...document.querySelectorAll('.pagination a,.pagination button,.pagination li,.pager-button,[ng-click*="changePage"],[aria-current]')];
@@ -94,7 +97,8 @@ const lessonSnapshotExpression = `JSON.stringify((function(){
   const active=pages.filter(x=>/active|current|selected/i.test(x.className)||/^(true|page)$/i.test(x.ariaCurrent)).map(x=>x.text).filter(Boolean);
   const currentPage=pages.find(x=>/^(true|page)$/i.test(x.ariaCurrent))?.text || active.find(x=>/^\\d+$/.test(x)) || null;
   const loading=!!document.querySelector('.loading,.spinner,[aria-busy="true"],.is-loading');
-  return {ids:[...document.querySelectorAll('.learning-activity')].map(x=>x.id||x.getAttribute('data-id')||'').filter(Boolean),active,pages,currentPage,loading};
+  const ids=[...document.querySelectorAll('.learning-activity,[data-id],[data-activity-id],a[href*="learning-activity"],a[href*="#/"]')].map(x=>{ const raw=x.id||x.getAttribute('data-id')||x.getAttribute('data-activity-id')||x.getAttribute('href')||''; return String(raw).match(/(?:learning-activity-)?(\d{5,})/)?.[1]||String(raw); }).filter(Boolean);
+  return {ids:[...new Set(ids)],active,pages,currentPage,loading};
 })())`;
 async function lessonSnapshot(target) {
   const raw = await evaluate(target, lessonSnapshotExpression).catch(() => '{}');
@@ -103,17 +107,22 @@ async function lessonSnapshot(target) {
 async function selectLessonPage(target, pageNumber) {
   if (pageNumber <= 1) return;
   const pageExpr = `(function(){
-    const exact='[ng-click="changePage(${pageNumber})"]';
-    const x=document.querySelector(exact); if(x){x.click(); return true;}
+    const labeledButton=document.querySelector('.next-page-button');
+    if(labeledButton){labeledButton.click(); return true;}
     const candidates=[...document.querySelectorAll('a,button,.pager-button,[role="button"]')];
-    const y=candidates.find(a=>String(a.innerText||a.textContent||'').trim()==='${pageNumber}');
+    const visible=a=>{const r=a.getBoundingClientRect(); return r.width>0&&r.height>0&&getComputedStyle(a).visibility!=='hidden'&&getComputedStyle(a).display!=='none';};
+    const x=candidates.find(a=>visible(a)&&(a.getAttribute('ng-click')||'').trim()==='changePage(${pageNumber})');
+    if(x){x.click(); return true;}
+    const next=candidates.find(a=>/changePage\(pageIndex\s*\+\s*1\)/.test(a.getAttribute('ng-click')||''));
+    if(next){next.click(); return true;}
+    const y=candidates.find(a=>visible(a)&&String(a.innerText||a.textContent||'').trim()==='${pageNumber}');
     if(y){y.click(); return true;}
-    const next=candidates.find(a=>/下一页|next/i.test(String(a.innerText||a.textContent||'')));
-    if(next){next.click(); return true;} return false;
+    const labeled=candidates.find(a=>visible(a)&&/下一页|next/i.test(String(a.innerText||a.textContent||'')));
+    if(labeled){labeled.click(); return true;} return false;
   })()`;
   for (let attempt = 1; attempt <= 4; attempt++) {
     const before = await lessonSnapshot(target);
-    const clicked = await evaluate(target, pageExpr).catch(() => false);
+    const clicked = await evaluate(target, pageExpr).catch((error) => { console.error(`[pagination-debug] ${error.message}`); return false; });
     if (!clicked) throw new Error(`无法点击课程分页第 ${pageNumber} 页`);
     for (let wait = 0; wait < 30; wait++) {
       await sleep(500);
@@ -125,25 +134,26 @@ async function selectLessonPage(target, pageNumber) {
 }
 async function discoverLinks(target, url, kind, pageNumber = 1) {
   const currentHref = await evaluate(target, 'location.href').catch(() => '');
-  const stay = useCurrentPage && kind === 'lesson' && /\/course\/\d+\/lesson/i.test(String(currentHref));
+  const stay = kind === 'lesson' && /\/course\/\d+\/lesson/i.test(String(currentHref));
   if (!stay) await navigate(target, url);
-  for (let wait = 0; wait < 20; wait++) {
+  for (let wait = 0; wait < 60; wait++) {
     const ready = await evaluate(target, kind === 'lesson' ? "document.querySelectorAll('.learning-activity').length > 0" : "document.querySelectorAll('a[href]').length > 0").catch(() => false);
     if (ready) break;
     await sleep(750);
   }
+  if (!stay && kind === 'lesson') await sleep(1200);
   if (!stay && kind === 'lesson' && pageNumber > 1) await selectLessonPage(target, pageNumber);
   for (let i = 0; i < 8; i++) {
     const raw = await evaluate(target, linksExpression).catch(() => '[]');
     let links = []; try { links = JSON.parse(raw || '[]'); } catch {}
     const filtered = links.filter((x) => kind === 'course'
       ? /\/course\/\d+\//i.test(x.href)
-      : (/\/learning-activity|\/lesson\//i.test(x.href) || /^learning-activity-\d+$/i.test(x.id)));
+      : (/\/learning-activity|\/lesson\//i.test(x.href) || /^learning-activity-\d+$/i.test(x.id) || /^\d{5,}$/.test(String(x.id))));
     if (kind === 'lesson') {
       const page = new URL(url);
       const base = page.origin + page.pathname.replace(/\/lesson\/?$/i, '/learning-activity') + '#/';
       for (const item of filtered) {
-        const match = item.id.match(/^learning-activity-(\d+)$/i);
+        const match = String(item.id).match(/(?:learning-activity-)?(\d+)$/i);
         if (match && !item.href) item.href = `${base}${match[1]}`;
       }
     }
@@ -191,10 +201,14 @@ if (!courseLinks.length) throw new Error('未发现课程链接；请确认当�
 
 for (const course of courseLinks) {
   const cid = idFrom(course.href, courseId);
-  const lessons = allPages ? await discoverAllLessonPages(target, course) : await discoverLinks(target, course.href, 'lesson', page);
+  progress({ phase: 'discovering-lessons', courseId: cid, status: 'discovering', course: course.text });
+  const lessons = lessonOnly && activityUrl
+    ? [{ href: activityUrl, text: `lesson-${lessonOnly}` }]
+    : (allPages ? await discoverAllLessonPages(target, course) : await discoverLinks(target, course.href, 'lesson', page));
   if (!lessons.length) { console.error(`[skip] ${course.text}: 未发现视频活动`); continue; }
   const filteredLessons = lessonOnly ? lessons.filter((x) => idFrom(x.href, '') === String(lessonOnly)) : lessons;
   const selectedLessons = limit > 0 ? filteredLessons.slice(0, limit) : filteredLessons;
+  progress({ phase: 'lessons-discovered', courseId: cid, total: selectedLessons.length, status: 'discovered' });
   for (let index = 0; index < selectedLessons.length; index++) {
     const lesson = selectedLessons[index]; const lid = idFrom(lesson.href, String(index + 1));
     const key = keyOf({ courseId: cid, lessonId: lid });
@@ -224,13 +238,14 @@ for (const course of courseLinks) {
       attempts: Number(previousAttempt?.attempts ?? 0) + 1, lastStartedAt: new Date().toISOString() };
     await saveState(state);
     try {
+      progress({ phase: 'opening', courseId: cid, lessonId: lid, title: lesson.text, status: 'opening' });
       if (dryRun) { state.lessons[key].status = 'pending'; console.log(`[dry-run] ${course.text} -> ${lesson.text}`); continue; }
       const capture = captureXjtuMedia({ port, timeoutMs: seconds * 1000, targetPattern: /xjtu\.edu\.cn/i,
-        onProgress: (p) => { if (p.phase === 'media') console.error(`[media] ${cid}/${lid} track=${p.track}`); } });
+        onProgress: (p) => { progress({ phase: `capture-${p.phase}`, courseId: cid, lessonId: lid, track: p.track }); } });
       await sleep(300);
       await navigate(target, lesson.href);
-      for (let attempt = 0; attempt < 15; attempt++) {
-        await sleep(700);
+      for (let attempt = 0; attempt < 6; attempt++) {
+        await sleep(attempt === 0 ? 500 : 1000);
         const freshTarget = await currentTarget().catch(() => null);
         if (freshTarget) await playEmbeddedVideos(freshTarget).catch(() => {});
       }
@@ -239,19 +254,27 @@ for (const course of courseLinks) {
       if (!candidate) throw new Error(`未捕获 PPT 轨道 ${track}，实际轨道: ${[...new Set(result.candidates.map((x) => x.track))].join(', ') || 'none'}`);
       const browserTarget = await currentTarget();
       const cookie = await readCdpCookieHeader(browserTarget, { host: new URL(candidate.url).hostname });
-      state.lessons[key].status = 'downloading'; await saveState(state);
+      state.lessons[key].status = 'downloading'; await saveState(state); progress({ phase: 'downloading', courseId: cid, lessonId: lid, status: 'downloading' });
       const cached = await cacheXjtuMp4(candidate.url, { dir: lessonCache, trackOverride: candidate.track,
-        headers: { ...(candidate.headers ?? {}), ...(cookie ? { Cookie: cookie } : {}), Referer: result.target.url } });
+        headers: { ...(candidate.headers ?? {}), ...(cookie ? { Cookie: cookie } : {}), Referer: result.target.url },
+        onProgress: (p) => progress({ ...p, courseId: cid, lessonId: lid }) });
       state.lessons[key].videoBytes = cached.bytes; state.lessons[key].cachePath = lessonCache;
-      state.lessons[key].status = 'processing'; await saveState(state);
-      await run(process.execPath, [resolve(ROOT, 'bin/course-ppt.mjs'), cached.path, '--out', lessonOut,
+      state.lessons[key].status = 'processing'; await saveState(state); progress({ phase: 'processing', courseId: cid, lessonId: lid, status: 'processing', output: lessonOut });
+      const pptArgs = [resolve(ROOT, 'bin/course-ppt.mjs'), cached.path, '--out', lessonOut,
         '--interval', String(interval), '--threshold', String(threshold),
         '--version-visual', String(versionVisual), '--version-text', String(versionText),
-        '--slide-visual', String(slideVisual), '--slide-text', String(slideText), '--ocr']);
+        '--slide-visual', String(slideVisual), '--slide-text', String(slideText)];
+      if (ocr) pptArgs.push('--ocr');
+      await run(process.execPath, pptArgs, (line) => {
+        const match = line.match(/^\[stage\]\s+(.+)$/);
+        if (match) progress({ phase: `processing-${match[1]}`, courseId: cid, lessonId: lid, status: 'processing', output: lessonOut });
+      });
+      progress({ phase: 'auditing', courseId: cid, lessonId: lid, status: 'auditing' });
       await run(process.execPath, [resolve(ROOT, 'bin/course-audit.mjs'), lessonOut]);
       const successMarker = await markLessonSuccess(lessonCache, { courseId: cid, lessonId: lid, output: lessonOut });
       state.lessons[key].successMarker = successMarker;
       state.lessons[key].status = 'completed'; state.lessons[key].videoDeleted = false; await saveState(state);
+      progress({ phase: 'completed', courseId: cid, lessonId: lid, status: 'completed', output: lessonOut });
       if (deleteVideo) {
         try { await cleanupLessonCache(cache, lessonCache); state.lessons[key].videoDeleted = true; delete state.lessons[key].cleanupError; }
         catch (error) { state.lessons[key].cleanupError = String(error?.message ?? error); }
@@ -278,3 +301,4 @@ for (const course of courseLinks) {
   }
 }
 console.log(JSON.stringify({ courses: courseLinks.length, state: statePath }, null, 2));
+

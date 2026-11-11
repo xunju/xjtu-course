@@ -44,7 +44,7 @@ node bin/xjtu-extension-server.mjs --port 8765 --cdp-port 9333
 
 ### 整门课程
 
-登录 `https://lms.xjtu.edu.cn/user/courses#/`，点击插件选择课程，进入课次页面，再点击插件并选择“生成整门课程 PDF”。插件会自动读取分页并逐节处理。
+登录 `https://lms.xjtu.edu.cn/user/courses#/`，点击插件选择课程，进入课程的“录播教材”页面（地址通常为 `/course/<课程ID>/lesson#/`），必须在这个页面点击插件并选择“生成整门课程 PDF”。插件会自动读取分页并逐节处理。进入具体录播视频播放页后，只使用“生成当前节 PDF”。
 
 ### 单节课程
 
@@ -94,3 +94,4 @@ node bin/xjtu-extension-server.mjs --port 8765 --cdp-port 9333
 - [插件开发计划](docs/EXTENSION-PLAN.zh.md)
 - [课程处理流程](docs/COURSE-PIPELINE.zh.md)
 - [课程验收标准](docs/COURSE-PIPELINE-ACCEPTANCE.zh.md)
+

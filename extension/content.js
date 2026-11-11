@@ -22,19 +22,25 @@
   }
   function scan() {
     const url = location.href;
-    const courses = unique([...document.querySelectorAll('a[href*="/course/"], [data-course-id]')].map((a) => ({
+    const currentCourseId = courseId(url);
+    const kind = /\/user\/courses/i.test(url) ? 'courses' : /\/learning-activity/i.test(url) ? 'activity' : /\/lesson/i.test(url) ? 'lessons' : 'other';
+    const courses = kind === 'courses' ? unique([...document.querySelectorAll('a[href*="/course/"], [data-course-id]')].map((a) => ({
       id: courseId(a.href || a.getAttribute('data-href') || '') || a.getAttribute('data-course-id'),
       title: text(a) || text(a.closest('[class*="course"],li,article')),
       url: absolute(a.href || a.getAttribute('data-href') || ''),
-    })).filter((x) => x.id && x.title && !/learning-activity|\/lesson/i.test(x.url)), 'id');
+    })).filter((x) => x.id && x.title && !/learning-activity|\/lesson/i.test(x.url)), 'id') : [];
     const lessons = unique([...document.querySelectorAll('a[href], .learning-activity, [data-id^="learning-activity"], [data-activity-id]')].map((node) => {
-      const href = node.href || node.getAttribute('data-href') || '';
-      return { id: lessonId(href, node), title: text(node), url: absolute(href), domId: node.id || '', page: pageInfo().current };
+      const candidate = node.getAttribute('data-href') || node.getAttribute('href') || node.href || '';
+      const href = /learning-activity|\/activity\b|#\/\d+/i.test(candidate) ? candidate : '';
+      const id = lessonId(href, node);
+      const target = id && currentCourseId ? `https://lms.xjtu.edu.cn/course/${currentCourseId}/learning-activity#/${id}` : absolute(href);
+      return { id, title: text(node), url: target, domId: node.id || '', page: pageInfo().current };
     }).filter((x) => x.id && (isLessonLink(x.url, x.domId) || /^\d{5,}$/.test(x.id))), 'id');
     return {
-      url, kind: /\/user\/courses/i.test(url) ? 'courses' : /\/learning-activity/i.test(url) ? 'activity' : /\/lesson/i.test(url) ? 'lessons' : 'other',
+      url, kind,
       courseId: courseId(url), lessonId: lessonId(url), courses, lessons, page: pageInfo(),
       title: text(document.querySelector('h1,h2,.course-title,.lesson-title')) || document.title,
+      courseTitle: text(document.querySelector('h1,.course-title,.lesson-title')) || document.title,
       capturedAt: new Date().toISOString(),
     };
   }
@@ -66,3 +72,4 @@
     return false;
   });
 })();
+

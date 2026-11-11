@@ -11,8 +11,12 @@
     <label>采样预设<select id="preset"><option value="balanced">平衡（0.3 秒）</option><option value="fast">快速（1 秒）</option><option value="complete">完整（0.1 秒）</option><option value="custom">自定义</option></select></label>
     <section class="sampling"><label>间隔（秒）<input id="interval" type="number" min="0.03" step="0.01" value="0.3"></label><label>变化阈值<input id="threshold" type="number" min="0" max="1" step="0.001" value="0.03"></label><label>页面/版本视觉阈值<input id="visual" type="number" min="0" max="1" step="0.0001" value="0.999"></label><label>页面/版本 OCR 阈值<input id="text" type="number" min="0" max="1" step="0.01" value="0.98"></label><label>幻灯片视觉阈值<input id="slideVisual" type="number" min="0" max="1" step="0.0001" value="0.999"></label><label>幻灯片 OCR 阈值<input id="slideText" type="number" min="0" max="1" step="0.01" value="0.99"></label></section>
     <label class="check"><input id="delete" type="checkbox"> 审计成功后删除临时视频</label>
+    <label class="check"><input id="ocr" type="checkbox" checked> 启用 OCR（更完整，但处理更慢）</label>
     <div class="buttons"><button id="start" class="primary">生成当前节 PDF</button><button id="startAll" class="primary">生成整门课程 PDF</button></div>
     <button id="cancel" hidden>取消当前任务</button>
+    <section id="jobProgress" class="job-progress" hidden><strong id="jobPhase">等待任务…</strong><div class="progress-track"><div id="progressBar"></div></div><p id="progressText"></p><p id="jobOutput"></p></section>
+    <section id="jobItems" class="job-items" hidden><h2>课次进度</h2><div id="jobItemList"></div></section>
     <pre id="result" aria-live="polite"></pre>
   </main><script src="popup.js"></script>
 </body></html>
+

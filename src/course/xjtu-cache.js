@@ -9,7 +9,7 @@
 import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { join } from 'node:path';
 
@@ -79,15 +79,30 @@ export async function cacheXjtuMp4(url, {
 
   if (!response.body) throw new Error('XJTU MP4 response has no body');
   const mode = offset > 0 ? 'a' : 'w';
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(part, { flags: mode }));
+  const declared = Number(response.headers.get('content-length') ?? 0);
+  const totalBytes = declared > 0 ? offset + declared : null;
+  let received = offset;
+  let lastReport = Date.now();
+  await pipeline(Readable.fromWeb(response.body), new Transform({
+    transform(chunk, _encoding, callback) {
+      received += chunk.length;
+      const now = Date.now();
+      if (now - lastReport >= 500 || received === totalBytes) {
+        lastReport = now;
+        onProgress?.({ phase: 'download', bytes: received, totalBytes, meta: safeMeta(media, trackOverride) });
+      }
+      callback(null, chunk);
+    },
+  }), createWriteStream(part, { flags: mode }));
   const done = await stat(part);
   await rename(part, target);
   // Only safe metadata is persisted; signed URL and headers never enter the cache.
   await writeFile(metaPath, JSON.stringify({ ...safeMeta(media, trackOverride), bytes: done.size }, null, 2), 'utf8');
-  onProgress?.({ phase: 'downloaded', path: target, bytes: done.size, meta: safeMeta(media, trackOverride) });
+  onProgress?.({ phase: 'downloaded', path: target, bytes: done.size, totalBytes, meta: safeMeta(media, trackOverride) });
   return { path: target, bytes: done.size, cached: false, meta: safeMeta(media, trackOverride) };
 }
 
 export async function readXjtuCacheMeta(path) {
   try { return JSON.parse(await readFile(join(path, 'meta.json'), 'utf8')); } catch { return null; }
 }
+
